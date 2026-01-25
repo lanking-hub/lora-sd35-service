@@ -1,0 +1,76 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# 敏感配置文件（重要！）
+config.yaml
+.env
+.env.local
+*.key
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/
+
+# 测试文件
+test_*.py
+*_test.py
+
+# 输出目录
+lora_outputs/
+outputs/
+*.log
+
+# 本地模型文件（不要打包）
+E:/models/
+models--stabilityai--*/
+huggingface/
+
+# 文档
+CLAUDE.md
+DEPLOYMENT_CHECKLIST.md
+*.md
+!README.md
+
+# 临时文件
+*.tmp
+*.bak
+checkpoint/
