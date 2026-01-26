@@ -16,7 +16,8 @@ ENV PYTHONUNBUFFERED=1 \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ \
-    --trusted-host mirrors.aliyun.com
+    --trusted-host mirrors.aliyun.com && \
+    pip install --upgrade 'peft>=0.17.0' --index-url https://pypi.org/simple/
 
 # 复制项目文件
 COPY main.py .
