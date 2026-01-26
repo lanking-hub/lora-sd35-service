@@ -230,7 +230,7 @@ def generate_image(pipe, prompt: str, seed: int = 42) -> Any:
 
         image = pipe(
             prompt=prompt,
-            num_inference_steps=5,
+            num_inference_steps=30,
             guidance_scale=6.0,
             height=896,
             width=896,

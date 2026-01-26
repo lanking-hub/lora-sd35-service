@@ -1,16 +1,6 @@
-# 使用 NVIDIA 官方 CUDA 12.1 基础镜像（Python 3.10）
-FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
-
-# 安装 Python 3.10
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        python3.10 \
-        python3-pip \
-        python3.10-dev \
-        curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3.10 /usr/bin/python \
-    && ln -sf /usr/bin/pip3 /usr/bin/pip
+# 使用阿里云函数计算官方 PyTorch 基础镜像
+# 包含 PyTorch 和 CUDA 支持，平台会在运行时注入 GPU 驱动
+FROM registry.cn-shanghai.aliyuncs.com/serverless_devs/pytorch:22.12-py3
 
 # 设置工作目录
 WORKDIR /opt/code
@@ -19,19 +9,10 @@ WORKDIR /opt/code
 ENV PYTHONUNBUFFERED=1 \
     PYTHONPATH=/opt/code \
     PIP_NO_CACHE_DIR=1 \
-    DEBIAN_FRONTEND=noninteractive \
-    CUDA_HOME=/usr/local/cuda \
-    PATH=${CUDA_HOME}/bin:${PATH} \
-    LD_LIBRARY_PATH=${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}
+    DEBIAN_FRONTEND=noninteractive
 
-# 安装 PyTorch (CUDA 12.1 版本，从 PyTorch 官方源)
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir \
-    torch torchvision torchaudio \
-    --index-url https://download.pytorch.org/whl/cu121 \
-    && pip show torch
-
-# 复制 requirements.txt 并安装其他 Python 依赖（PyTorch 已安装）
+# 复制 requirements.txt 并安装 Python 依赖
+# 注意：PyTorch 已包含在基础镜像中，无需单独安装
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ \

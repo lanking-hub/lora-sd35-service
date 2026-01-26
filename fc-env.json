@@ -1,0 +1,9 @@
+{
+  "OSS_ACCESS_KEY_ID": "LTAI5t8C6tXrDK6z53iAkiYQ",
+  "OSS_ACCESS_KEY_SECRET": "LN4sd56LSc2WVda5jjvWOGyr5qEoJK",
+  "OSS_ENDPOINT": "oss-cn-hangzhou.aliyuncs.com",
+  "OSS_BUCKET": "yzyp-ai",
+  "OSS_EXPIRES_MINUTES": "43200",
+  "QWEN_API_KEY": "sk-cf39f154f6694f328052c0cca3ba9275",
+  "QWEN_MODEL": "qwen-turbo-latest"
+}
