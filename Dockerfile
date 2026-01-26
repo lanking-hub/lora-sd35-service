@@ -14,7 +14,9 @@ ENV PYTHONUNBUFFERED=1 \
 # 复制 requirements.txt 并安装 Python 依赖
 # 注意：PyTorch 已包含在基础镜像中，无需单独安装
 COPY requirements.txt .
-RUN pip install --upgrade pip && \
+RUN apt-get update && \
+    apt-get install -y git && \
+    pip install --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ \
     --trusted-host mirrors.aliyun.com && \
@@ -22,15 +24,13 @@ RUN pip install --upgrade pip && \
     'diffusers>=0.35.0' \
     'transformers>=4.40.0' \
     'accelerate>=0.30.0' \
-    'peft>=0.17.0' \
     'safetensors>=0.4.0' \
     'huggingface-hub>=0.20.0' \
     'sentencepiece>=0.2.0' \
     --index-url https://pypi.org/simple/ \
     --trusted-host pypi.org \
     --trusted-host files.pythonhosted.org && \
-    apt-get update && \
-    apt-get install -y git && \
+    pip install --no-cache-dir git+https://github.com/huggingface/peft.git@v0.17.1 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
