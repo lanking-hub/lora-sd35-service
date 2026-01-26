@@ -14,10 +14,25 @@ ENV PYTHONUNBUFFERED=1 \
 # 复制 requirements.txt 并安装 Python 依赖
 # 注意：PyTorch 已包含在基础镜像中，无需单独安装
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt \
     -i https://mirrors.aliyun.com/pypi/simple/ \
     --trusted-host mirrors.aliyun.com && \
-    pip install --upgrade 'peft>=0.17.0' --index-url https://pypi.org/simple/
+    pip install --no-cache-dir --force-reinstall --upgrade \
+    'diffusers>=0.35.0' \
+    'transformers>=4.40.0' \
+    'accelerate>=0.30.0' \
+    'peft>=0.17.0' \
+    'safetensors>=0.4.0' \
+    'huggingface-hub>=0.20.0' \
+    'sentencepiece>=0.2.0' \
+    --index-url https://pypi.org/simple/ \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org && \
+    apt-get update && \
+    apt-get install -y git && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
 # 复制项目文件
 COPY main.py .
@@ -32,15 +47,13 @@ COPY cos/pytorch_lora_weights.safetensors ./cos/
 COPY rl/pytorch_lora_weights.safetensors ./rl/
 COPY lulu/pytorch_lora_weights.safetensors ./lulu/
 
-# 创建输出目录
-RUN mkdir -p /tmp/images
+# 创建输出目录并设置权限
+RUN mkdir -p /tmp/images && \
+    chmod -R 755 /opt/code && \
+    chmod -R 777 /tmp/images
 
 # 暴露端口
 EXPOSE 9000
-
-# 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:9000/health || exit 1
 
 # 启动 FastAPI 服务
 CMD ["python", "app.py"]

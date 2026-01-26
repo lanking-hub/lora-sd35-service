@@ -1,19 +1,5 @@
-# PyTorch (通常用 conda 或特殊源安装，这里仅作参考)
-# AutoDL 环境通常已安装
-# torch>=2.0.0
-# torchvision>=0.15.0
-# torchaudio>=2.0.0
-
-# Diffusers 和核心依赖（版本匹配阿里云镜像源可用版本）
-diffusers>=0.35.0
-transformers>=4.40.0
-accelerate>=0.30.0
-safetensors>=0.4.0
-peft>=0.17.0
-
-# Hugging Face Hub
-huggingface-hub>=0.20.0
-sentencepiece>=0.2.0
+# 基础依赖（从阿里云镜像源安装）
+# Hugging Face 高级库在 Dockerfile 中从官方 PyPI 安装
 
 # 图像处理
 Pillow>=10.0.0
