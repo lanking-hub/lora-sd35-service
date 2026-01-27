@@ -1,6 +1,6 @@
-# 使用阿里云函数计算官方 PyTorch 基础镜像
-# 包含 PyTorch 和 CUDA 支持，平台会在运行时注入 GPU 驱动
-FROM registry.cn-shanghai.aliyuncs.com/serverless_devs/pytorch:22.12-py3
+# 使用纯Python 3.10镜像（非slim版本，包含完整系统库以支持PyTorch CUDA运行时）
+# 注意：此镜像不包含CUDA驱动，避免与函数计算运行时注入的驱动冲突
+FROM python:3.10
 
 # 设置工作目录
 WORKDIR /opt/code
@@ -11,28 +11,38 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     DEBIAN_FRONTEND=noninteractive
 
-# 复制 requirements.txt 并安装 Python 依赖
-# 注意：PyTorch 已包含在基础镜像中，无需单独安装
-COPY requirements.txt .
+# 安装系统依赖（包含编译工具，以防某些包需要编译）
 RUN apt-get update && \
-    apt-get install -y git && \
-    pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt \
-    -i https://mirrors.aliyun.com/pypi/simple/ \
-    --trusted-host mirrors.aliyun.com && \
-    pip install --no-cache-dir --force-reinstall --upgrade \
-    'diffusers>=0.35.0' \
-    'transformers>=4.40.0' \
-    'accelerate>=0.30.0' \
-    'safetensors>=0.4.0' \
-    'huggingface-hub>=0.20.0' \
-    'sentencepiece>=0.2.0' \
-    --index-url https://pypi.org/simple/ \
-    --trusted-host pypi.org \
-    --trusted-host files.pythonhosted.org && \
-    pip install --no-cache-dir git+https://github.com/huggingface/peft.git@v0.17.1 && \
+    apt-get install -y git build-essential && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
+
+# 安装PyTorch 2.1.2（支持CUDA 12.1，但不包含驱动）
+# 锁定版本以避免API变更导致的问题
+RUN pip install --no-cache-dir \
+    torch==2.1.2 \
+    torchvision==0.16.2 \
+    torchaudio==2.1.2 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# 安装其他Python依赖（先从阿里云镜像安装基础依赖）
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    -i https://mirrors.aliyun.com/pypi/simple/ \
+    --trusted-host mirrors.aliyun.com
+
+# 从官方PyPI安装Hugging Face库并锁定版本
+RUN pip install --no-cache-dir \
+    'diffusers==0.36.0' \
+    'transformers==4.46.0' \
+    'accelerate==1.0.0' \
+    'safetensors==0.4.5' \
+    'huggingface-hub==0.26.0' \
+    'sentencepiece==0.2.0' \
+    'peft==0.17.1' \
+    --index-url https://pypi.org/simple/ \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org
 
 # 复制项目文件
 COPY main.py .
