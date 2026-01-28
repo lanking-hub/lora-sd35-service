@@ -10,44 +10,37 @@ from utils import upload_file_to_oss, get_oss_config_from_env, generate_title_qw
 # 抑制警告
 warnings.filterwarnings("ignore")
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-# 禁用 tokenizer 并行转换，避免卡住
 os.environ['TOKENIZERS_PARALLELISM'] = 'false'
-# 设置临时文件目录（跨平台兼容）
-if os.name == 'nt':  # Windows
+
+# 设置临时文件目录
+if os.name == 'nt':
     os.environ['TMP'] = 'D:\\temp'
     os.environ['TEMP'] = 'D:\\temp'
-else:  # Linux/Docker
+else:
     os.environ['TMP'] = '/tmp'
     os.environ['TEMP'] = '/tmp'
 
-# ============= 全局配置 =============
-# 设置 Hugging Face 镜像（国内加速）
+# 设置 Hugging Face 镜像
 os.environ['HF_ENDPOINT'] = 'https://hf-mirror.com'
 
-# OSS 挂载配置（函数计算部署时使用）
-OSS_MOUNT_POINT = os.getenv("OSS_MOUNT_POINT", "/mnt/oss")  # OSS 挂载点
-OSS_MODEL_PATH = os.path.join(OSS_MOUNT_POINT, "models", "sd35-medium")  # OSS 上的模型路径
+# OSS 配置
+OSS_MOUNT_POINT = os.getenv("OSS_MOUNT_POINT", "/mnt/oss")
+OSS_MODEL_PATH = os.path.join(OSS_MOUNT_POINT, "models", "sd35-medium")
 
-# 基础模型路径配置
-# 优先级：环境变量 > OSS 挂载路径 > Hugging Face Hub
-# 注意：不再使用 /tmp 缓存，因为 44GB 模型超过临时空间限制（10GB）
+# 基础模型路径
 if os.getenv("BASE_MODEL_PATH"):
-    # 部署时通过环境变量指定（优先级最高）
     BASE_MODEL_PATH = os.getenv("BASE_MODEL_PATH")
     print(f"✅ 使用环境变量指定的模型路径: {BASE_MODEL_PATH}")
 elif os.path.exists(OSS_MODEL_PATH):
-    # 函数计算环境：直接使用 OSS 挂载路径
     BASE_MODEL_PATH = OSS_MODEL_PATH
     print(f"✅ 检测到 OSS 挂载，使用 OSS 模型路径: {BASE_MODEL_PATH}")
 else:
-    # 本地开发：使用 Hugging Face Hub
     BASE_MODEL_PATH = "stabilityai/stable-diffusion-3.5-medium"
     print(f"⚠️  未检测到 OSS 挂载，将使用 HuggingFace Hub: {BASE_MODEL_PATH}")
 
-# 项目根目录
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# 品牌到 LoRA 文件的映射
+# 品牌 LoRA 映射
 BRAND_LORA_MAP = {
     "zara": os.path.join(PROJECT_ROOT, "zara", "pytorch_lora_weights.safetensors"),
     "hoc": os.path.join(PROJECT_ROOT, "hoc", "pytorch_lora_weights.safetensors"),
@@ -56,21 +49,13 @@ BRAND_LORA_MAP = {
     "lulu": os.path.join(PROJECT_ROOT, "lulu", "pytorch_lora_weights.safetensors"),
 }
 
-# 设备配置 - 自动选择 GPU 或 CPU
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-
-# 全局 pipeline 对象 (复用以减少加载时间)
 _pipe: Any = None
 
 
 def load_pipeline():
-    """延迟加载 pipeline,只在第一次调用时加载
-
-    Returns:
-        StableDiffusion3Pipeline: 加载好的 pipeline
-    """
+    """延迟加载 pipeline"""
     global _pipe
-
     if _pipe is not None:
         return _pipe
 
@@ -81,7 +66,6 @@ def load_pipeline():
     try:
         print("   正在加载模型组件（这可能需要几分钟）...")
 
-        # 根据设备选择数据类型
         if DEVICE == "cuda":
             print("   ✅ 使用 GPU 模式（快速）")
             dtype = torch.float16
@@ -89,13 +73,12 @@ def load_pipeline():
             print("   ⚠️  使用 CPU 模式（较慢，约 30 分钟/张）")
             dtype = torch.float32
 
-        # 判断是否从本地路径加载（OSS 挂载或环境变量指定）
         is_local_path = (
-            os.path.exists(BASE_MODEL_PATH) or  # 路径存在
-            BASE_MODEL_PATH.startswith("/") or  # Linux 绝对路径
-            BASE_MODEL_PATH.startswith("./") or  # 相对路径
+            os.path.exists(BASE_MODEL_PATH) or
+            BASE_MODEL_PATH.startswith("/") or
+            BASE_MODEL_PATH.startswith("./") or
             BASE_MODEL_PATH.startswith("../") or
-            (len(BASE_MODEL_PATH) > 1 and BASE_MODEL_PATH[1] == ':')  # Windows 路径 (C:\, E:\, ...)
+            (len(BASE_MODEL_PATH) > 1 and BASE_MODEL_PATH[1] == ':')
         )
 
         load_kwargs = {
@@ -104,7 +87,6 @@ def load_pipeline():
             "low_cpu_mem_usage": True,
         }
 
-        # 如果是本地路径，添加 local_files_only=True 避免访问 HuggingFace
         if is_local_path:
             load_kwargs["local_files_only"] = True
             print(f"   🔒 使用本地文件模式 (local_files_only=True)")
@@ -112,17 +94,21 @@ def load_pipeline():
         _pipe = StableDiffusion3Pipeline.from_pretrained(
             BASE_MODEL_PATH,
             **load_kwargs
-        ).to(DEVICE)
+        )
 
-        # 启用内存优化
+        # CPU 卸载（关键优化）
+        if DEVICE == "cuda":
+            print("   🔄 启用模型 CPU 卸载（降低显存占用到 4-8GB）")
+            _pipe.enable_model_cpu_offload()
+        else:
+            _pipe = _pipe.to(DEVICE)
+
         _pipe.enable_attention_slicing()
-
         print("✅ 模型加载成功")
 
     except Exception as e:
         import traceback
         print(f"❌ 模型加载失败: {e}")
-        print(f"\n详细错误信息:")
         traceback.print_exc()
         raise RuntimeError(f"模型加载失败: {str(e)}")
 
@@ -130,262 +116,240 @@ def load_pipeline():
 
 
 def validate_request(event: Dict[str, Any]) -> Tuple[str, str]:
-    """验证请求数据
-
-    Args:
-        event: 请求数据字典
-
-    Returns:
-        (brand, prompt): 品牌名称和提示词
-
-    Raises:
-        ValueError: 请求数据无效时抛出异常
-    """
+    """验证请求数据"""
     brand = event.get("brand", "").lower()
     prompt = event.get("prompt", "")
 
-    # 验证品牌
     if not brand:
         raise ValueError("缺少 'brand' 参数")
 
     if brand not in BRAND_LORA_MAP:
-        supported_brands = list(BRAND_LORA_MAP.keys())
-        raise ValueError(
-            f"不支持的品牌: '{brand}'。"
-            f"支持的品牌: {supported_brands}"
-        )
+        raise ValueError(f"不支持的品牌: {brand}，支持的品牌: {', '.join(BRAND_LORA_MAP.keys())}")
 
-    # 验证 prompt
     if not prompt:
         raise ValueError("缺少 'prompt' 参数")
-
-    if not isinstance(prompt, str):
-        raise ValueError("'prompt' 必须是字符串类型")
-
-    if len(prompt) > 2000:
-        raise ValueError("'prompt' 长度不能超过 2000 字符")
 
     return brand, prompt
 
 
-def load_lora_weights(pipe, lora_path: str) -> None:
-    """加载 LoRA 权重
+def translate_prompt(prompt: str) -> str:
+    """翻译中文提示词到英文"""
+    try:
+        from openai import OpenAI
+        api_key = os.getenv("QWEN_API_KEY")
+        if not api_key:
+            print("⚠️  未配置 QWEN_API_KEY，跳过翻译")
+            return prompt
 
-    Args:
-        pipe: Stable Diffusion pipeline
-        lora_path: LoRA 权重文件路径
+        client = OpenAI(
+            api_key=api_key,
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+        )
 
-    Raises:
-        RuntimeError: LoRA 加载失败时抛出异常
-    """
-    if not os.path.exists(lora_path):
-        raise FileNotFoundError(f"LoRA 文件不存在: {lora_path}")
+        print(f"🌐 正在翻译提示词...")
+        completion = client.chat.completions.create(
+            model="qwen-plus",
+            messages=[
+                {"role": "system", "content": "你是一个专业的翻译，将中文翻译成适合 AI 绘画的英文提示词。只返回翻译结果，不要解释。"},
+                {"role": "user", "content": prompt}
+            ]
+        )
 
-    print(f"📥 正在加载 LoRA 权重...")
-    print(f"   LoRA 路径: {lora_path}")
+        translated = completion.choices[0].message.content.strip()
+        print(f"   翻译结果: {translated}")
+        return translated
+
+    except Exception as e:
+        print(f"⚠️  翻译失败: {e}，使用原提示词")
+        return prompt
+
+
+def generate_title(english_prompt: str) -> str:
+    """生成中文产品标题"""
+    try:
+        result = generate_title_qwen(english_prompt)
+        # generate_title_qwen 返回元组 (英文提示词, 中文标题)
+        # 需要提取第二个元素（中文标题）
+        if isinstance(result, tuple) and len(result) > 1:
+            title = result[1]
+        else:
+            title = result
+        
+        if len(title) > 15:
+            title = title[:15]
+        return title
+    except Exception as e:
+        print(f"⚠️  标题生成失败: {e}")
+        return "AI生成图像"
+
+
+def generate_image(brand: str, prompt: str) -> str:
+    """生成图像"""
+    print(f"\n{'='*60}")
+    print(f"🎨 开始生成图像")
+    print(f"{'='*60}")
 
     try:
-        # 尝试多种加载方法
-        try:
-            pipe.load_lora_weights(
-                lora_path,
-                adapter_name="brand_lora",
-                weight_name="pytorch_lora_weights.safetensors"
-            )
-            print("✅ LoRA 权重加载成功 (方法1)")
-        except Exception as e1:
-            print(f"   方法1 失败: {e1}")
+        pipe = load_pipeline()
+
+        lora_path = BRAND_LORA_MAP[brand]
+        print(f"📌 LoRA 权重: {lora_path}")
+
+        if not os.path.exists(lora_path):
+            raise FileNotFoundError(f"LoRA 权重文件不存在: {lora_path}")
+
+        # 🔧 智能LoRA管理：检查adapter是否已加载
+        print(f"🔍 检查 LoRA adapter 状态...")
+        
+        # 获取当前已加载的所有adapters
+        if hasattr(pipe, 'get_active_adapters'):
+            active_adapters = pipe.get_active_adapters()
+        else:
+            active_adapters = []
+        
+        print(f"   当前激活的adapters: {active_adapters}")
+        
+        # 判断是否需要加载新adapter
+        if brand in active_adapters:
+            # 已加载，直接激活使用
+            print(f"✅ LoRA '{brand}' 已加载，直接使用")
+            pipe.set_adapters([brand])
+        else:
+            # 尝试加载新adapter
             try:
-                pipe.load_lora_weights(lora_path)
-                print("✅ LoRA 权重加载成功 (方法2)")
-            except Exception as e2:
-                print(f"   方法2 失败: {e2}")
-                raise RuntimeError(
-                    f"LoRA 权重加载失败。请检查文件格式是否正确。"
-                )
+                pipe.load_lora_weights(lora_path, adapter_name=brand)
+                pipe.set_adapters([brand])
+                print(f"✅ 成功加载 LoRA: {brand}")
+            except ValueError as e:
+                if "already in use" in str(e):
+                    # 已存在但未激活，直接激活
+                    print(f"✅ LoRA '{brand}' 已存在，激活使用")
+                    pipe.set_adapters([brand])
+                else:
+                    raise e
+
+        combined_prompt = f"{prompt}, high quality, professional photography, fashion photography"
+
+        print(f"📝 提示词: {combined_prompt}")
+        print(f"⏳ 开始生成...（这可能需要 20-40 秒）")
+
+        with torch.no_grad():
+            result = pipe(
+                prompt=combined_prompt,
+                num_inference_steps=25,
+                guidance_scale=7.5,
+                height=1024,
+                width=1024,
+            )
+
+        os.makedirs("/tmp/images", exist_ok=True)
+        filename = f"{uuid.uuid4()}.jpg"
+        image_path = os.path.join("/tmp/images", filename)
+        result.images[0].save(image_path)
+
+        print(f"✅ 图像已保存: {image_path}")
+        return image_path
 
     except Exception as e:
-        raise RuntimeError(f"LoRA 权重加载失败: {str(e)}")
-
-
-def generate_image(pipe, prompt: str, seed: int = 42) -> Any:
-    """生成图像
-
-    Args:
-        pipe: Stable Diffusion pipeline
-        prompt: 提示词
-        seed: 随机种子
-
-    Returns:
-        生成的 PIL Image 对象
-
-    Raises:
-        RuntimeError: 图像生成失败时抛出异常
-    """
-    print(f"🎨 正在生成图像...")
-    print(f"   提示词: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
-
-    try:
-        generator = torch.Generator(DEVICE).manual_seed(seed)
-
-        image = pipe(
-            prompt=prompt,
-            num_inference_steps=30,
-            guidance_scale=6.0,
-            height=896,
-            width=896,
-            generator=generator,
-        ).images[0]
-
-        print(f"✅ 图像生成成功 (尺寸: {image.size})")
-        return image
-
-    except Exception as e:
+        import traceback
+        print(f"❌ 图像生成失败: {e}")
+        traceback.print_exc()
         raise RuntimeError(f"图像生成失败: {str(e)}")
 
 
-def save_and_upload_image(image, brand: str) -> str:
-    """保存图像到本地并上传到阿里云 OSS
-
-    Args:
-        image: PIL Image 对象
-        brand: 品牌名称
-
-    Returns:
-        str: OSS 签名 URL
-
-    Raises:
-        RuntimeError: 保存或上传失败时抛出异常
-    """
-    # 创建输出目录（函数计算使用 /tmp，本地开发使用当前目录）
-    if os.path.exists("/tmp"):  # 函数计算环境
-        output_dir = "/tmp/images"
-    else:  # 本地开发环境
-        output_dir = os.path.join(PROJECT_ROOT, "lora_outputs")
-    os.makedirs(output_dir, exist_ok=True)
-
-    # 生成唯一文件名
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    unique_id = uuid.uuid4().hex[:8]
-    filename = f"{brand}_{timestamp}_{unique_id}.png"
-    file_path = os.path.join(output_dir, filename)
-
-    # 保存到本地
-    print(f"💾 正在保存图像...")
+def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
+    """函数计算入口"""
     try:
-        image.save(file_path)
-        print(f"✅ 图像已保存: {file_path}")
-    except Exception as e:
-        raise RuntimeError(f"图像保存失败: {str(e)}")
-
-    # 上传到 OSS
-    print(f"☁️  正在上传到阿里云 OSS...")
-    try:
-        oss_config = get_oss_config_from_env()
-        image_url = upload_file_to_oss(
-            file_path=file_path,
-            oss_config=oss_config,
-            object_key_prefix="lora_images",
-            delete_after_upload=True  # 上传后删除本地文件
-        )
-
-        if not image_url:
-            raise RuntimeError("OSS 上传返回空 URL")
-
-        print(f"✅ 上传成功: {image_url}")
-        return image_url
-
-    except Exception as e:
-        # 上传失败时保留本地文件
-        print(f"⚠️  OSS 上传失败: {e}")
-        print(f"   本地文件保留: {file_path}")
-        raise RuntimeError(f"图像上传 OSS 失败: {str(e)}")
-
-
-def main(event: Dict[str, Any]) -> Tuple[bool, Any]:
-    """主函数:接收 brand 和 prompt,生成图像并返回 URL 和标题
-
-    Args:
-        event: 请求数据字典,包含:
-            - brand: 品牌名称 (zara/hoc/cos/rl/lulu)
-            - prompt: 图像生成提示词
-
-    Returns:
-        (success, result): tuple
-            - success: bool, 是否成功
-            - result: 成功时为 dict {"url": str, "title": str}
-                     失败时为 str (错误信息)
-
-    示例:
-        >>> event = {"brand": "zara", "prompt": "A white dress"}
-        >>> success, result = main(event)
-        >>> if success:
-        ...     print(result["url"], result["title"])
-    """
-    print(f"\n{'='*60}")
-    print(f"收到新的图像生成请求")
-    print(f"{'='*60}\n")
-
-    try:
-        # 1. 验证请求数据
-        brand, prompt = validate_request(event)
+        print(f"\n{'='*60}")
+        print(f"收到新的图像生成请求")
+        print(f"{'='*60}")
         print(f"📋 请求参数:")
-        print(f"   品牌: {brand}")
-        print(f"   提示词长度: {len(prompt)} 字符\n")
+        print(f"   品牌: {event.get('brand', '')}")
+        print(f"   提示词长度: {len(event.get('prompt', ''))} 字符")
 
-        # 2. 获取 LoRA 路径
-        lora_path = BRAND_LORA_MAP[brand]
-        print(f"🔍 LoRA 配置:")
-        print(f"   路径: {lora_path}")
-        print(f"   文件存在: {os.path.exists(lora_path)}\n")
+        # 验证请求
+        brand, prompt = validate_request(event)
 
-        # 3. 加载 pipeline
-        pipe = load_pipeline()
+        print(f"\n🔍 LoRA 配置:")
+        print(f"   路径: {BRAND_LORA_MAP[brand]}")
+        print(f"   文件存在: {os.path.exists(BRAND_LORA_MAP[brand])}")
 
-        # 4. 加载 LoRA 权重
-        load_lora_weights(pipe, lora_path)
+        # 翻译提示词
+        english_prompt = translate_prompt(prompt)
 
-        # 5. 处理提示词（翻译+生成标题）
-        print(f"\n正在处理提示词...")
-        english_prompt, title = generate_title_qwen(prompt)
-        print(f"   原文: {prompt[:60]}{'...' if len(prompt) > 60 else ''}")
-        print(f"   英文: {english_prompt}")
-        print(f"   标题: {title}\n")
+        # 生成图像
+        image_path = generate_image(brand, english_prompt)
 
-        # 6. 生成图像（使用翻译后的英文提示词）
-        image = generate_image(pipe, english_prompt, seed=42)
+        # 上传到 OSS
+        print(f"\n☁️  上传到 OSS...")
+        oss_config = get_oss_config_from_env()
+        image_url = upload_file_to_oss(image_path, oss_config)
 
-        # 6. 保存并上传
-        image_url = save_and_upload_image(image, brand)
+        # 生成标题
+        title = generate_title(english_prompt)
+        print(f"📝 标题: {title}")
 
-        print(f"\n{'='*60}")
-        print(f"✅ 图像生成完成")
-        print(f"{'='*60}\n")
+        print(f"\n✅ 处理完成!")
+        print(f"   图片 URL: {image_url}")
 
-        return True, {"url": image_url, "title": title}
+        return {
+            "success": True,
+            "image_url": image_url,
+            "title": title
+        }
+
+    except ValueError as e:
+        # 参数验证错误
+        print(f"\n❌ 参数错误: {e}")
+        return {
+            "success": False,
+            "url": None,
+            "title": None,
+            "error": str(e)
+        }
 
     except Exception as e:
-        print(f"\n{'='*60}")
-        print(f"❌ 处理失败: {str(e)}")
-        print(f"{'='*60}\n")
-        return False, str(e)
+        # 其他错误
+        print(f"\n❌ 处理失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "success": False,
+            "url": None,
+            "title": None,
+            "error": str(e)
+        }
 
 
-# ============= 本地测试 =============
+# ========== FastAPI 兼容层 ==========
+def main(event, context=None):
+    """FastAPI app.py 兼容的入口函数
+    
+    Args:
+        event: 事件字典，包含 brand 和 prompt
+        context: 上下文（可选）
+    
+    Returns:
+        (success, result): 元组格式，兼容 app.py 调用
+    """
+    result = handler(event, context)
+    
+    if result.get("success"):
+        return True, {
+            "url": result["image_url"],
+            "title": result["title"]
+        }
+    else:
+        return False, result.get("error", "Unknown error")
+
+
 if __name__ == "__main__":
-    # 测试事件
+    # 本地测试
+    import json
     test_event = {
         "brand": "zara",
-        "prompt": "Off-white top, chiffon, with a small amount of matching color embroidery, sleeveless, flowing"
+        "prompt": "一件优雅的红色晚礼服，适合正式场合"
     }
-
-    # 运行测试
-    success, result = main(test_event)
-
-    if success:
-        print(f"\n✅ 测试成功!")
-        print(f"图像 URL: {result['url']}")
-        print(f"标题: {result['title']}")
-    else:
-        print(f"\n❌ 测试失败!")
-        print(f"错误信息: {result}")
+    result = handler(test_event)
+    print(f"\n测试结果:")
+    print(json.dumps(result, ensure_ascii=False, indent=2))

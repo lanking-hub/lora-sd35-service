@@ -270,7 +270,7 @@ def upload_file_to_oss(
 
         # 上传文件
         print(f"正在上传到 OSS: {filename}")
-        result = bucket.put_object_from_file(object_key, file_path)
+        result = bucket.put_object_from_file(object_key, file_path, headers={"x-oss-object-acl": "public-read"})
 
         if result.status == 200:
             # 生成签名 URL
