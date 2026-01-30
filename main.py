@@ -96,10 +96,10 @@ def load_pipeline():
             **load_kwargs
         )
 
-        # CPU 卸载（关键优化）
+        # 直接加载到GPU
         if DEVICE == "cuda":
-            print("   🔄 启用模型 CPU 卸载（降低显存占用到 4-8GB）")
-            _pipe.enable_model_cpu_offload()
+            print("   直接加载到GPU（不使用CPU offload）  ")
+            _pipe = _pipe.to(DEVICE)
         else:
             _pipe = _pipe.to(DEVICE)
 

@@ -59,7 +59,8 @@ async def root():
         "endpoints": {
             "health": "/health",
             "generate": "/generate",
-            "brands": "/brands"
+            "brands": "/brands",
+            "gpu": "/gpu"
         }
     }
 
@@ -142,6 +143,44 @@ async def list_brands():
             {"name": "lulu", "description": "Lulu 品牌 LoRA"}
         ]
     }
+
+
+@app.get("/gpu", tags=["GPU信息"])
+async def gpu_info():
+    """获取GPU信息"""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            device_count = torch.cuda.device_count()
+            devices = []
+            for i in range(device_count):
+                props = torch.cuda.get_device_properties(i)
+                total_memory_gb = round(props.total_memory / 1024**3, 2)
+                devices.append({
+                    "id": i,
+                    "name": props.name,
+                    "total_memory_gb": total_memory_gb,
+                    "compute_capability": f"{props.major}.{props.minor}",
+                    "multi_processor_count": props.multi_processor_count
+                })
+
+            return {
+                "cuda_available": True,
+                "device_count": device_count,
+                "devices": devices,
+                "current_device": torch.cuda.current_device(),
+                "torch_version": torch.__version__
+            }
+        else:
+            return {
+                "cuda_available": False,
+                "message": "CUDA not available, using CPU"
+            }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "message": "Failed to get GPU info"
+        }
 
 
 # 启动服务器
