@@ -228,7 +228,7 @@ def generate_image(brand: str, prompt: str) -> str:
                 else:
                     raise e
 
-        combined_prompt = f"{prompt}, high quality, professional photography, fashion photography"
+        combined_prompt = f"fashion clothing, {prompt}, garment, apparel, high quality, professional fashion photography"
 
         print(f"📝 提示词: {combined_prompt}")
         print(f"⏳ 开始生成...（这可能需要 20-40 秒）")
@@ -274,8 +274,10 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
         print(f"   路径: {BRAND_LORA_MAP[brand]}")
         print(f"   文件存在: {os.path.exists(BRAND_LORA_MAP[brand])}")
 
-        # 翻译提示词
-        english_prompt = translate_prompt(prompt)
+        # 一次调用完成翻译和标题生成（拼接服装上下文避免歧义词被误判）
+        english_prompt, title = generate_title_qwen(f"服装款式/面料描述，生成服装图像：{prompt}")
+        print(f"🌐 翻译结果: {english_prompt}")
+        print(f"📝 标题: {title}")
 
         # 生成图像
         image_path = generate_image(brand, english_prompt)
@@ -284,10 +286,6 @@ def handler(event: Dict[str, Any], context: Any = None) -> Dict[str, Any]:
         print(f"\n☁️  上传到 OSS...")
         oss_config = get_oss_config_from_env()
         image_url = upload_file_to_oss(image_path, oss_config)
-
-        # 生成标题
-        title = generate_title(english_prompt)
-        print(f"📝 标题: {title}")
 
         print(f"\n✅ 处理完成!")
         print(f"   图片 URL: {image_url}")

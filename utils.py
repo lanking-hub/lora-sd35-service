@@ -398,18 +398,24 @@ def generate_title_qwen(prompt: str) -> Tuple[str, str]:
             base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
         )
 
-        system_prompt = """你是一个时尚电商助手。请完成两个任务：
-1. 将商品描述翻译成简洁的英文（用于AI图像生成）
-2. 生成一个中文商品标题
+        system_prompt = """你是一个专业的时尚服装图像生成助手。用户输入的提示词是描述服装款式、面料或风格的，请完成两个任务：
+1. 将服装描述翻译成适合生成时尚服装图像的英文提示词
+2. 根据描述生成一个简洁的中文服装标题
+
+重要翻译规则（所有词语均为服装/面料含义，不是食物或其他无关内容）：
+- "华夫格" = waffle knit fabric clothing
+- "格纹" = plaid pattern clothing
+- "蕾丝" = lace fabric dress
+- "灯芯绒" = corduroy clothing
+
 
 请严格按照JSON格式返回，不要任何其他文字：
-{"english_prompt": "英文描述", "title": "中文标题"}
+{"english_prompt": "英文提示词", "title": "中文服装标题"}
 
-标题要求：
-- 格式为'修饰词+主体'，例如'米白色无袖上衣'、'黑色露肩连衣裙'
+服装名称要求：
+- 格式为'修饰词+服装类型'，例如'米白色无袖上衣'、'黑色蕾丝连衣裙'；若无服装类型或修饰词，则按实际情况生成
 - 总字数严格控制在15字以内
-- 修饰词包括颜色、版型、材质等
-- 主体包括上衣、连衣裙、短袖、夹克等服装类型"""
+- 修饰词包括颜色、版型、材质等"""
 
         print(f"正在调用通义千问处理提示词...")
 
